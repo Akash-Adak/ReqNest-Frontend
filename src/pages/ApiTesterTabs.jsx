@@ -59,7 +59,7 @@ export default function ApiTesterTabs() {
       label: "Update", 
       method: "PUT", 
       path: `/data/${apiName}`, 
-      description: "Update document(s)", 
+      description: "Update document(s) + _id must", 
       requiresBody: true,
       icon: <PencilSquareIcon className="h-4 w-4" />
     },
@@ -206,13 +206,7 @@ export default function ApiTesterTabs() {
       PATCH: "bg-purple-100 text-purple-800 border-purple-200" 
     };
     
-    const darkColorMap = {
-      GET: "bg-green-900/30 text-green-300 border-green-700/30", 
-      POST: "bg-blue-900/30 text-blue-300 border-blue-700/30", 
-      PUT: "bg-yellow-900/30 text-yellow-300 border-yellow-700/30", 
-      DELETE: "bg-red-900/30 text-red-300 border-red-700/30", 
-      PATCH: "bg-purple-900/30 text-purple-300 border-purple-700/30" 
-    };
+
     
     const colors = darkMode ? darkColorMap[method] || "bg-gray-900/30 text-gray-300 border-gray-700/30" 
                             : colorMap[method] || "bg-gray-100 text-gray-800 border-gray-200";
@@ -367,12 +361,6 @@ export default function ApiTesterTabs() {
                 placeholder="Backend base URL" 
               />
               
-              <button 
-                onClick={() => setDarkMode(!darkMode)} 
-                className={`p-2 rounded-lg ${theme.card} border ${theme.border} hover:${theme.input} transition-colors`}
-              >
-                {darkMode ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
-              </button>
               
               {user && (
                 <div className="flex items-center space-x-2">
@@ -386,37 +374,24 @@ export default function ApiTesterTabs() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Tier selection */}
-        {user && (
-          <div className={`mb-6 p-4 rounded-lg ${theme.card} border ${theme.border}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-medium mb-1">API Tier</h2>
-                <p className="text-sm text-gray-500">Your current plan determines rate limits and features</p>
-              </div>
-              
-              <select
-                value={user.tier}
-                onChange={(e) => {
-                  const newTier = e.target.value;
-                  const updatedUser = { ...user, tier: newTier };
-                  setUser(updatedUser);
-                  localStorage.setItem("user", JSON.stringify(updatedUser));
-                  
-                  setHeadersText(JSON.stringify({
-                    "Content-Type": "application/json",
-                    "X-API-KEY": user.apiKey || user.email,
-                    "X-USER-TIER": newTier
-                  }, null, 2));
-                }}
-                className={`border ${theme.input} px-3 py-2 rounded text-sm`}
-              >
-                <option value="FREE">FREE</option>
-                <option value="PREMIUM">PREMIUM</option>
-                <option value="ENTERPRISE">ENTERPRISE</option>
-              </select>
+       {user && (
+        <div className={`mb-6 p-4 rounded-lg ${theme.card} border ${theme.border}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-medium mb-1">API Tier</h2>
+              <p className="text-sm text-gray-500">
+                Your current plan determines rate limits and features
+              </p>
             </div>
+
+            {/* Fixed display of tier */}
+            <span className="px-3 py-1 rounded text-sm font-semibold border bg-gray-100">
+              {user.tier}
+            </span>
           </div>
-        )}
+        </div>
+      )}
+
 
         {/* Rate limit banner */}
         {rateLimitExceeded && (
@@ -428,7 +403,7 @@ export default function ApiTesterTabs() {
               </p>
             </div>
             <button 
-              onClick={() => navigate("/pricing")}
+              onClick={() => navigate("/plans")}
               className={`flex items-center ${theme.button} px-4 py-2 rounded text-sm`}
             >
               Upgrade Plan <ArrowTopRightOnSquareIcon className="h-4 w-4 ml-1" />
@@ -595,7 +570,7 @@ export default function ApiTesterTabs() {
                     <div className="space-y-4 max-h-[500px] overflow-y-auto">
                       {(responses[active?.id] || []).map((r, idx) => (
                         <div key={idx} className={`border ${theme.border} rounded-lg overflow-hidden`}>
-                          <div className={`px-4 py-3 flex items-center justify-between ${r.error ? theme.error : r.status >= 400 ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" : theme.success}`}>
+                          <div className={`px-4 py-3 flex items-center justify-between ${r.error ? theme.error : r.status >= 400 ? "bg-amber-100 text-red-800 dark:bg-amber-900/30 dark:text-amber-300" : theme.success}`}>
                             <div className="flex items-center gap-3">
                               <span className="text-sm font-mono">{new Date(r.timestamp).toLocaleTimeString()}</span>
                               {r.error ? (
@@ -604,7 +579,7 @@ export default function ApiTesterTabs() {
                                 <span className="font-mono font-medium">{r.status} {r.statusText}</span>
                               )}
                             </div>
-                            <div className={`text-xs opacity-70 truncate max-w-xs`}>
+                            <div className={`text-xs opacity-100 truncate max-w-xs`}>
                               {r.config?.method} {r.config?.url}
                             </div>
                           </div>
@@ -612,7 +587,7 @@ export default function ApiTesterTabs() {
                             <pre className="text-sm font-mono whitespace-pre-wrap">
                               {r.error ? (
                                 <>
-                                  <div className="text-red-500 dark:text-red-400">{r.error}</div>
+                                  <div className="text-red-800 dark:text-red-400">{r.error}</div>
                                   {r.response && (
                                     <div className="mt-3">
                                       <div className="font-semibold">Status: {r.response.status}</div>
