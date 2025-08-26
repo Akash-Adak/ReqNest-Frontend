@@ -46,12 +46,12 @@ const Navbar = () => {
               >
                 Home
               </Link>
-              <Link
+              {/* <Link
                 to="/upload"
                 className="text-gray-600 hover:text-indigo-600 px-3 py-2 text-sm font-medium transition-colors"
               >
                 Upload Schema
-              </Link>
+              </Link> */}
               <Link
                 to="/apis"
                 className="text-gray-600 hover:text-indigo-600 px-3 py-2 text-sm font-medium transition-colors"

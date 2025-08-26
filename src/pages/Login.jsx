@@ -13,6 +13,7 @@ const Login = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const token = params.get('token');
+    console.log(token);
     if (token) {
       handleToken(token);
       navigate('/apis');
