@@ -23,7 +23,7 @@ export default function ApiList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [downloading, setDownloading] = useState(null);
+  const [downloading, setDownloading] = useState(0);
   const [userEmail, setUserEmail] = useState("");
   const [deleting, setDeleting] = useState(null);
 
@@ -49,6 +49,8 @@ export default function ApiList() {
       }
     };
     fetchUser();
+
+    
   }, []);
 
   // Only fetch APIs after login
@@ -56,9 +58,11 @@ export default function ApiList() {
     if (userEmail) {
       fetchApis();
     }
+
   }, [userEmail]);
 
   const filteredApis = apis.filter((api) =>
+    
     api.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -67,11 +71,9 @@ export default function ApiList() {
     if (!window.confirm(`Are you sure you want to delete the API "${api.name}"? This action cannot be undone.`)) {
       return;
     }
-
     setDeleting(api.id);
     try {
-      // ✅ if backend expects ID, use api.id; if it expects name, replace with api.name
-      await axios.delete(`http://localhost:8080/apis/${api.id}`, { withCredentials: true });
+      await axios.delete(`http://localhost:8080/apis/${api.name}`, { withCredentials: true });
       setApis(apis.filter(a => a.id !== api.id));
     } catch (err) {
       console.error("Error deleting API:", err);
@@ -81,89 +83,91 @@ export default function ApiList() {
     }
   };
 
-  // Download API docs as PDF
-  const downloadDocs = async (api) => {
-    setDownloading(api.id);
-    try {
-      const res = await axios.get(`http://localhost:8080/apis/${api.name}`, { withCredentials: true });
-      const data = res.data;
-      const schema = typeof data.schemaJson === "string" ? JSON.parse(data.schemaJson) : data.schemaJson;
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      let yPosition = 15;
+ const downloadDocs = async (api) => {
+  setDownloading(prev => prev + 1);  // increment counter
+  try {
+    const res = await axios.get(`http://localhost:8080/apis/${api.name}`, { withCredentials: true });
+    const data = res.data;
+    const schema = typeof data.schemaJson === "string" ? JSON.parse(data.schemaJson) : data.schemaJson;
+    const doc = new jsPDF();
 
-      // Header
-      doc.setFont("helvetica", "normal");
-      doc.setFillColor(59, 130, 246);
-      doc.rect(0, 0, pageWidth, 30, "F");
-      doc.setFontSize(20);
-      doc.setTextColor(255, 255, 255);
-      doc.text("API Documentation", pageWidth / 2, 18, { align: "center" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPosition = 15;
 
-      // Details section
-      doc.setTextColor(0, 0, 0);
-      yPosition = 40;
-      doc.setFontSize(16);
-      doc.setFillColor(243, 244, 246);
-      doc.rect(10, yPosition, pageWidth - 20, 10, "F");
-      doc.text("API Details", 15, yPosition + 7);
-      yPosition += 15;
+    // Header
+    doc.setFont("helvetica", "normal");
+    doc.setFillColor(59, 130, 246);
+    doc.rect(0, 0, pageWidth, 30, "F");
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.text("API Documentation", pageWidth / 2, 18, { align: "center" });
 
-      doc.setFontSize(12);
-      doc.text(`API Name: ${api.name}`, 15, yPosition);
-      yPosition += 8;
+    // API Details
+    doc.setTextColor(0, 0, 0);
+    yPosition = 40;
+    doc.setFontSize(16);
+    doc.setFillColor(243, 244, 246);
+    doc.rect(10, yPosition, pageWidth - 20, 10, "F");
+    doc.text("API Details", 15, yPosition + 7);
+    yPosition += 15;
 
-      if (api.description) {
-        const splitDescription = doc.splitTextToSize(`Description: ${api.description}`, pageWidth - 30);
-        doc.text(splitDescription, 15, yPosition);
-        yPosition += splitDescription.length * 6;
-      }
+    doc.setFontSize(12);
+    doc.text(`API Name: ${api.name}`, 15, yPosition);
+    yPosition += 8;
 
-      doc.text(`ID: ${api.id}`, 15, yPosition);
-      yPosition += 8;
-      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 15, yPosition);
-      yPosition += 15;
+    if (api.description) {
+      const splitDescription = doc.splitTextToSize(`Description: ${api.description}`, pageWidth - 30);
+      doc.text(splitDescription, 15, yPosition);
+      yPosition += splitDescription.length * 6;
+    }
 
-      if (yPosition > pageHeight - 50) {
+    doc.text(`ID: ${api.id}`, 15, yPosition);
+    yPosition += 8;
+    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 15, yPosition);
+    yPosition += 15;
+
+    if (yPosition > pageHeight - 50) {
+      doc.addPage();
+      yPosition = 15;
+    }
+
+    // API Schema
+    doc.setFontSize(16);
+    doc.setFillColor(243, 244, 246);
+    doc.rect(10, yPosition, pageWidth - 20, 10, "F");
+    doc.text("API Schema", 15, yPosition + 7);
+    yPosition += 15;
+
+    doc.setFontSize(10);
+    doc.setFont("courier", "normal");
+    const formattedSchema = JSON.stringify(schema, null, 2);
+    const splitSchema = doc.splitTextToSize(formattedSchema, pageWidth - 20);
+
+    for (let i = 0; i < splitSchema.length; i++) {
+      if (yPosition > pageHeight - 15) {
         doc.addPage();
         yPosition = 15;
       }
-
-      // Schema section
-      doc.setFontSize(16);
-      doc.setFillColor(243, 244, 246);
-      doc.rect(10, yPosition, pageWidth - 20, 10, "F");
-      doc.text("API Schema", 15, yPosition + 7);
-      yPosition += 15;
-
-      doc.setFontSize(10);
-      doc.setFont("courier", "normal");
-      const formattedSchema = JSON.stringify(schema, null, 2);
-      const splitSchema = doc.splitTextToSize(formattedSchema, pageWidth - 20);
-
-      for (let i = 0; i < splitSchema.length; i++) {
-        if (yPosition > pageHeight - 15) {
-          doc.addPage();
-          yPosition = 15;
-        }
-        doc.text(splitSchema[i], 15, yPosition);
-        yPosition += 4;
-      }
-
-      // Footer
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generated by ReqNest - ${userEmail || "User"}`, pageWidth / 2, pageHeight - 10, { align: "center" });
-
-      doc.save(`${api.name}-documentation.pdf`);
-    } catch (err) {
-      console.error("Error downloading docs:", err);
-      alert("Failed to download documentation.");
-    } finally {
-      setDownloading(null);
+      doc.text(splitSchema[i], 15, yPosition);
+      yPosition += 4;
     }
-  };
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated by ReqNest - ${userEmail || "User"}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+
+    doc.save(`${api.name}-documentation.pdf`);
+  } catch (err) {
+    console.error("Error downloading docs:", err);
+    alert("Failed to download documentation.");
+  } 
+  // finally {
+  //   setDownloading(prev => Math.max(prev - 1, 0)); // decrement safely
+  // }
+};
+
 
   const updateSchema = (api) => {
     navigate(`/upload`, { state: { existingApi: api } });
@@ -238,7 +242,7 @@ export default function ApiList() {
           <StatCard icon={<EyeIcon className="h-6 w-6 text-blue-600" />} label="Total APIs" value={apis.length} color="blue" />
           <StatCard icon={<DocumentArrowDownIcon className="h-6 w-6 text-green-600" />} label="Available" value={filteredApis.length} color="green" />
           <StatCard icon={<PlayIcon className="h-6 w-6 text-purple-600" />} label="Ready to Test" value={apis.filter(a => a.schemaJson).length} color="purple" />
-          <StatCard icon={<DocumentTextIcon className="h-6 w-6 text-orange-600" />} label="Documented" value={apis.filter(api => api.description).length} color="orange" />
+          <StatCard icon={<DocumentTextIcon className="h-6 w-6 text-orange-600" />} label="Documented" value={downloading} color="orange" />
         </div>
 
         {/* API List */}
