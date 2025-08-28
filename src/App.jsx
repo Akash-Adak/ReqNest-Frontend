@@ -13,81 +13,32 @@ import Dashboard from "./pages/Dashboard";
 import Plans from "./pages/Plans";
 import Footer from "./components/Footer";
 
+import ApiDetails from "./pages/ApiDetails";
+
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Navbar />
         <Routes>
-          {/* Public Routes */}
+      
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<HomePage />} />
 
-          {/* Protected Routes */}
-          <Route
-            path="/upload"
-            element={
-              <PrivateRoute>
-                <UploadSchema />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/apis"
-            element={
-              <PrivateRoute>
-                <AppList />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/test/:apiName"
-            element={
-              <PrivateRoute>
-                <ApiTesterTabs />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <PrivateRoute>
-                <Profile />
-              </PrivateRoute>
-            }
-          />
+          <Route path="/upload" element={<PrivateRoute><UploadSchema /></PrivateRoute>} />
+          <Route path="/apis" element={<PrivateRoute><AppList /></PrivateRoute>} />
+          <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+          <Route path="/plans" element={<Plans />} />
+          <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/docs/:apiName" element={<APIDocsWrapper />} />
 
-           <Route
-            path="/plans"
-            element={
-              // <PrivateRoute>
-                <Plans />
-              // </PrivateRoute>
-            }
-          />
-
-           <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <Dashboard />
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/docs/:apiName"
-            element={
-              // <PrivateRoute>
-                <APIDocsWrapper  />
-              //  </PrivateRoute> 
-            }
-          />
-
-          {/* Fallback */}
+        
+          <Route path="/test/:apiName" element={<PrivateRoute><ApiTesterTabs /></PrivateRoute>} />
+            <Route path="/details/:apiName" element={<PrivateRoute><ApiDetails /></PrivateRoute>} />
+       
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <Footer/>
+        <Footer />
       </AuthProvider>
     </BrowserRouter>
   );

@@ -1,5 +1,5 @@
 // src/pages/ApiList.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   ArrowPathIcon, 
@@ -9,9 +9,10 @@ import {
   EyeIcon,
   ServerIcon,
   UserIcon,
-  ChevronDownIcon,
   DocumentTextIcon,
-  XMarkIcon
+  XMarkIcon,
+  PencilSquareIcon,
+  PlusIcon
 } from "@heroicons/react/24/outline";
 import jsPDF from "jspdf";
 import axios from "axios";
@@ -24,9 +25,7 @@ export default function ApiList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [downloading, setDownloading] = useState(null);
   const [userEmail, setUserEmail] = useState("");
-  const [downloadMenuOpen, setDownloadMenuOpen] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  const dropdownRef = useRef(null);
 
   // Fetch APIs from backend
   const fetchApis = () => {
@@ -35,154 +34,128 @@ export default function ApiList() {
     axios
       .get("http://localhost:8080/apis", { withCredentials: true })
       .then((res) => setApis(res.data))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(err.response?.data?.error || err.message))
       .finally(() => setLoading(false));
   };
 
   // Fetch logged-in user info
-  const fetchUser = () => {
-    axios
-      .get("http://localhost:8080/api/user", { withCredentials: true })
-      .then((res) => setUserEmail(res.data.email))
-      .catch(() => setUserEmail(""));
-  };
-
   useEffect(() => {
-    fetchApis();
-    fetchUser();
-    
-    // Close dropdown when clicking outside
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDownloadMenuOpen(null);
+    const fetchUser = async () => {
+      try {
+        const res = await axios.get("http://localhost:8080/api/user", { withCredentials: true });
+        setUserEmail(res.data.email);
+      } catch {
+        setUserEmail(""); // not logged in
       }
     };
-    
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    fetchUser();
   }, []);
+
+  // Only fetch APIs after login
+  useEffect(() => {
+    if (userEmail) {
+      fetchApis();
+    }
+  }, [userEmail]);
 
   const filteredApis = apis.filter((api) =>
     api.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Delete API
-const deleteApi = async (apiId, apiName) => {
-  if (!window.confirm(`Are you sure you want to delete the API "${apiName}"? This action cannot be undone.`)) {
-    return;
-  }
-  
-  setDeleting(apiId);
-  try {
-    await axios.delete(`http://localhost:8080/apis/${apiName}`, { 
-      withCredentials: true 
-    });
-    // Remove the API from the local state - use the correct property name
-    setApis(apis.filter(api => api.name !== apiName));
-  } catch (err) {
-    console.error("Error deleting API:", err);
-    alert("Failed to delete API.");
-  } finally {
-    setDeleting(null);
-  }
-};
+  const deleteApi = async (api) => {
+    if (!window.confirm(`Are you sure you want to delete the API "${api.name}"? This action cannot be undone.`)) {
+      return;
+    }
 
-  // Download API documentation as PDF
+    setDeleting(api.id);
+    try {
+      // ✅ if backend expects ID, use api.id; if it expects name, replace with api.name
+      await axios.delete(`http://localhost:8080/apis/${api.id}`, { withCredentials: true });
+      setApis(apis.filter(a => a.id !== api.id));
+    } catch (err) {
+      console.error("Error deleting API:", err);
+      alert(err.response?.data?.error || "Failed to delete API.");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  // Download API docs as PDF
   const downloadDocs = async (api) => {
     setDownloading(api.id);
-    setDownloadMenuOpen(null);
-    
     try {
-      const res = await axios.get(`http://localhost:8080/apis/${api.name}`, { 
-        withCredentials: true 
-      });
+      const res = await axios.get(`http://localhost:8080/apis/${api.name}`, { withCredentials: true });
       const data = res.data;
-      const schema = typeof data.schemaJson === "string" 
-        ? JSON.parse(data.schemaJson) 
-        : data.schemaJson;
-
-      // Create PDF document
+      const schema = typeof data.schemaJson === "string" ? JSON.parse(data.schemaJson) : data.schemaJson;
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       let yPosition = 15;
-      
-      // Set styles
+
+      // Header
       doc.setFont("helvetica", "normal");
-      
-      // Add header with logo and title
       doc.setFillColor(59, 130, 246);
-      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.rect(0, 0, pageWidth, 30, "F");
       doc.setFontSize(20);
       doc.setTextColor(255, 255, 255);
       doc.text("API Documentation", pageWidth / 2, 18, { align: "center" });
-      
-      // Reset text color
+
+      // Details section
       doc.setTextColor(0, 0, 0);
       yPosition = 40;
-      
-      // API Details section
       doc.setFontSize(16);
       doc.setFillColor(243, 244, 246);
-      doc.rect(10, yPosition, pageWidth - 20, 10, 'F');
+      doc.rect(10, yPosition, pageWidth - 20, 10, "F");
       doc.text("API Details", 15, yPosition + 7);
       yPosition += 15;
-      
+
       doc.setFontSize(12);
       doc.text(`API Name: ${api.name}`, 15, yPosition);
       yPosition += 8;
-      
+
       if (api.description) {
         const splitDescription = doc.splitTextToSize(`Description: ${api.description}`, pageWidth - 30);
         doc.text(splitDescription, 15, yPosition);
         yPosition += splitDescription.length * 6;
       }
-      
+
       doc.text(`ID: ${api.id}`, 15, yPosition);
       yPosition += 8;
-      
       doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 15, yPosition);
       yPosition += 15;
-      
-      // Schema section
+
       if (yPosition > pageHeight - 50) {
         doc.addPage();
         yPosition = 15;
       }
-      
+
+      // Schema section
       doc.setFontSize(16);
       doc.setFillColor(243, 244, 246);
-      doc.rect(10, yPosition, pageWidth - 20, 10, 'F');
+      doc.rect(10, yPosition, pageWidth - 20, 10, "F");
       doc.text("API Schema", 15, yPosition + 7);
       yPosition += 15;
-      
+
       doc.setFontSize(10);
       doc.setFont("courier", "normal");
-      
-      // Format and add schema content
       const formattedSchema = JSON.stringify(schema, null, 2);
       const splitSchema = doc.splitTextToSize(formattedSchema, pageWidth - 20);
-      
-      // Check if we need a new page
-      const schemaHeight = splitSchema.length * 4;
-      if (yPosition + schemaHeight > pageHeight - 15) {
-        doc.addPage();
-        yPosition = 15;
+
+      for (let i = 0; i < splitSchema.length; i++) {
+        if (yPosition > pageHeight - 15) {
+          doc.addPage();
+          yPosition = 15;
+        }
+        doc.text(splitSchema[i], 15, yPosition);
+        yPosition += 4;
       }
-      
-      doc.text(splitSchema, 15, yPosition);
-      yPosition += schemaHeight + 10;
-      
+
       // Footer
       doc.setFontSize(8);
       doc.setTextColor(100, 100, 100);
-      doc.text(`Generated by ReqNest - ${userEmail || "User"}`, pageWidth / 2, pageHeight - 10, { 
-        align: "center" 
-      });
-      
-      // Save the PDF
+      doc.text(`Generated by ReqNest - ${userEmail || "User"}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+
       doc.save(`${api.name}-documentation.pdf`);
     } catch (err) {
       console.error("Error downloading docs:", err);
@@ -192,11 +165,21 @@ const deleteApi = async (apiId, apiName) => {
     }
   };
 
-  // Toggle download menu for a specific API
-  const toggleDownloadMenu = (apiId, event) => {
-    event.stopPropagation();
-    setDownloadMenuOpen(downloadMenuOpen === apiId ? null : apiId);
+  const updateSchema = (api) => {
+    navigate(`/upload`, { state: { existingApi: api } });
   };
+
+  // 🚨 Block page if not logged in
+  if (!userEmail) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-900">
+        <div className="bg-white p-8 rounded-xl shadow-md text-center">
+          <h2 className="text-xl font-bold mb-2">Please log in to continue</h2>
+          <p className="text-gray-600">You need to be authenticated to access the API Library.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 pt-16">
@@ -206,11 +189,9 @@ const deleteApi = async (apiId, apiName) => {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">API Library</h1>
-              <p className="text-gray-600 mt-2">
-                Explore and test all available APIs in one place
-              </p>
+              <p className="text-gray-600 mt-2">Explore and test all available APIs in one place</p>
             </div>
-            
+
             <div className="flex items-center gap-3">
               <button
                 onClick={fetchApis}
@@ -220,10 +201,17 @@ const deleteApi = async (apiId, apiName) => {
               >
                 <ArrowPathIcon className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
               </button>
+
+              <button
+                onClick={() => navigate(`/upload`)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <PlusIcon className="h-4 w-4" /> Add New API
+              </button>
             </div>
           </div>
 
-          {/* Search and User Info */}
+          {/* Search + User Info */}
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
             <div className="relative w-full sm:max-w-md">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -237,177 +225,186 @@ const deleteApi = async (apiId, apiName) => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            
-            {userEmail && (
-              <div className="flex items-center bg-blue-50 text-blue-700 px-4 py-2 rounded-lg">
-                <UserIcon className="h-4 w-4 mr-2" />
-                <span className="text-sm font-medium">{userEmail}</span>
-              </div>
-            )}
+
+            <div className="flex items-center bg-blue-50 text-blue-700 px-4 py-2 rounded-lg">
+              <UserIcon className="h-4 w-4 mr-2" />
+              <span className="text-sm font-medium">{userEmail}</span>
+            </div>
           </div>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <EyeIcon className="h-6 w-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-sm font-medium text-gray-600">Total APIs</h3>
-                <p className="text-2xl font-bold text-gray-900">{apis.length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DocumentArrowDownIcon className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-sm font-medium text-gray-600">Available</h3>
-                <p className="text-2xl font-bold text-gray-900">{filteredApis.length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <PlayIcon className="h-6 w-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-sm font-medium text-gray-600">Ready to Test</h3>
-                <p className="text-2xl font-bold text-gray-900">{filteredApis.length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <DocumentTextIcon className="h-6 w-6 text-orange-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-sm font-medium text-gray-600">Documented</h3>
-                <p className="text-2xl font-bold text-gray-900">{apis.filter(api => api.description).length}</p>
-              </div>
-            </div>
-          </div>
+          <StatCard icon={<EyeIcon className="h-6 w-6 text-blue-600" />} label="Total APIs" value={apis.length} color="blue" />
+          <StatCard icon={<DocumentArrowDownIcon className="h-6 w-6 text-green-600" />} label="Available" value={filteredApis.length} color="green" />
+          <StatCard icon={<PlayIcon className="h-6 w-6 text-purple-600" />} label="Ready to Test" value={apis.filter(a => a.schemaJson).length} color="purple" />
+          <StatCard icon={<DocumentTextIcon className="h-6 w-6 text-orange-600" />} label="Documented" value={apis.filter(api => api.description).length} color="orange" />
         </div>
 
         {/* API List */}
         {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
+          <Loader />
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
-            <button
-              onClick={fetchApis}
-              className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
+          <ErrorState error={error} onRetry={fetchApis} />
         ) : filteredApis.length === 0 ? (
-          <div className="bg-white rounded-xl p-8 text-center border border-gray-200 shadow-sm">
-            <DocumentArrowDownIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchTerm ? "No matching APIs found" : "No APIs available"}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              {searchTerm
-                ? "Try adjusting your search term or clear the search to see all APIs."
-                : "Upload your first API schema to get started."}
-            </p>
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
-              >
-                Clear Search
-              </button>
-            )}
-          </div>
+          <EmptyState searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredApis.map((api) => (
-              <div
+              <ApiCard
                 key={api.id}
-                className="bg-white rounded-xl overflow-hidden border border-gray-200 hover:shadow-lg transition-all duration-300 hover:border-blue-300 relative group"
-              >
-                {/* Delete button */}
-                <button
-                    onClick={() => deleteApi(api.id, api.name)}
-                    disabled={deleting === api.id}
-                    className="absolute top-3 right-3 p-1.5 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-200 disabled:opacity-50"
-                    aria-label={`Delete ${api.name}`}
-                  >
-                    {deleting === api.id ? (
-                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <XMarkIcon className="h-4 w-4" />
-                    )}
-                  </button>
-                  
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center">
-                      <div className="bg-blue-100 text-blue-600 p-3 rounded-xl mr-4">
-                        <ServerIcon className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{api.name}</h3>
-                        <p className="text-xs text-gray-500">ID: {api.id}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {api.description && (
-                    <p className="text-gray-600 text-sm mb-6 line-clamp-2">
-                      {api.description}
-                    </p>
-                  )}
-
-                  <div className="flex flex-col gap-3">
-                    <div className="flex gap-3">
-                      {/* <button
-                        onClick={() => navigate(`/docs/${api.name}`)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                      >
-                        <DocumentTextIcon className="h-4 w-4" />
-                        <span className="text-sm">View Docs</span>
-                      </button> */}
-                      
-                      <button
-                        onClick={() => navigate(`/test/${api.name}`)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <PlayIcon className="h-4 w-4" />
-                        <span className="text-sm">Test API</span>
-                      </button>
-                    </div>
-                    
-                    <div className="relative" ref={dropdownRef}>
-                         <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadDocs(api);
-                            }}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
-                      
-                          >
-                            <DocumentArrowDownIcon className="h-4 w-4 mr-2" />
-                            Download as PDF
-                          </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                api={api}
+                deleting={deleting}
+                downloading={downloading}
+                deleteApi={deleteApi}
+                downloadDocs={downloadDocs}
+                updateSchema={updateSchema}
+                navigate={navigate}
+              />
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* --- Small UI components for readability --- */
+function StatCard({ icon, label, value, color }) {
+  return (
+    <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+      <div className="flex items-center">
+        <div className={`p-2 bg-${color}-100 rounded-lg`}>{icon}</div>
+        <div className="ml-4">
+          <h3 className="text-sm font-medium text-gray-600">{label}</h3>
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Loader() {
+  return (
+    <div className="flex justify-center items-center py-12">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
+  );
+}
+
+function ErrorState({ error, onRetry }) {
+  return (
+    <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+      <p className="text-red-600 font-medium">{error}</p>
+      <button
+        onClick={onRetry}
+        className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+      >
+        Try Again
+      </button>
+    </div>
+  );
+}
+
+function EmptyState({ searchTerm, setSearchTerm }) {
+  return (
+    <div className="bg-white rounded-xl p-8 text-center border border-gray-200 shadow-sm">
+      <DocumentArrowDownIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+      <h3 className="text-lg font-medium text-gray-900 mb-2">
+        {searchTerm ? "No matching APIs found" : "No APIs available"}
+      </h3>
+      <p className="text-gray-600 mb-4">
+        {searchTerm
+          ? "Try adjusting your search term or clear the search to see all APIs."
+          : "Upload your first API schema to get started."}
+      </p>
+      {searchTerm && (
+        <button
+          onClick={() => setSearchTerm("")}
+          className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+        >
+          Clear Search
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ApiCard({ api, deleting, downloading, deleteApi, downloadDocs, updateSchema, navigate }) {
+  return (
+    <div className="bg-white rounded-xl overflow-hidden border border-gray-200 hover:shadow-lg transition-all duration-300 hover:border-blue-300 relative group">
+      {/* Delete button */}
+      <button
+        onClick={() => deleteApi(api)}
+        disabled={deleting === api.id}
+        className="absolute top-3 right-3 p-1.5 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-200 disabled:opacity-50"
+        aria-label={`Delete ${api.name}`}
+      >
+        {deleting === api.id ? (
+          <ArrowPathIcon className="h-4 w-4 animate-spin" />
+        ) : (
+          <XMarkIcon className="h-4 w-4" />
+        )}
+      </button>
+
+      <div className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center">
+            <div className="bg-blue-100 text-blue-600 p-3 rounded-xl mr-4">
+              <ServerIcon className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">{api.name}</h3>
+            </div>
+          </div>
+        </div>
+
+        {api.description && (
+          <p className="text-gray-600 text-sm mb-6 line-clamp-2">{api.description}</p>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate(`/test/${api.name}`)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <PlayIcon className="h-4 w-4" />
+              <span className="text-sm">Test API</span>
+            </button>
+
+            <button
+              onClick={() => updateSchema(api)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors"
+            >
+              <PencilSquareIcon className="h-4 w-4" />
+              <span className="text-sm">Update Schema</span>
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => downloadDocs(api)}
+              disabled={downloading === api.id}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors disabled:opacity-50"
+            >
+              {downloading === api.id ? (
+                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              ) : (
+                <DocumentArrowDownIcon className="h-4 w-4 mr-2" />
+              )}
+              Download PDF
+            </button>
+
+            <button
+              onClick={() => navigate(`/details/${api.name}`)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+            >
+              <EyeIcon className="h-4 w-4" />
+              View Details
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
