@@ -6,7 +6,7 @@ import HomePage from "./pages/HomePage";
 import UploadSchema from "./components/UploadSchema";
 import AppList from "./pages/AppList";
 import Profile from "./pages/Profile";
-import { APIDocsWrapper } from "./components/APIDocs";
+// import { APIDocsWrapper } from "./components/APIDocs";
 import ApiTesterTabs from "./pages/ApiTesterTabs";
 import PrivateRoute from "./components/PrivateRoute";
 import Dashboard from "./pages/Dashboard";
@@ -30,7 +30,7 @@ function App() {
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/plans" element={<Plans />} />
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-          <Route path="/docs/:apiName" element={<APIDocsWrapper />} />
+          {/* <Route path="/docs/:apiName" element={<APIDocsWrapper />} /> */}
 
         
           <Route path="/test/:apiName" element={<PrivateRoute><ApiTesterTabs /></PrivateRoute>} />

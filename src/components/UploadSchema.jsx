@@ -12,7 +12,8 @@ import {
   PencilSquareIcon,
   XMarkIcon,
   PlusIcon,
-  TrashIcon
+  TrashIcon,
+  ArrowPathIcon
 } from "@heroicons/react/24/outline";
 
 const ajv = new Ajv();
@@ -31,9 +32,13 @@ export default function UploadSchema() {
   const [formMode, setFormMode] = useState(false);
   const [fields, setFields] = useState([]);
   const [requiredFields, setRequiredFields] = useState([]);
-  
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("manual"); // "manual" or "ai"
+ 
   const location = useLocation();
   const existingApiName = location.state?.existingApi;
+  
   useEffect(() => {
     if (existingApiName) {
       getSchemadetails(existingApiName);
@@ -55,6 +60,7 @@ export default function UploadSchema() {
 
   const getSchemadetails = async (existingApiName) => {
     try {
+      // console.log(existingApiName);
       setSelectedSchema(existingApiName);
       const response = await axios.get(
         `http://localhost:8080/apis/${existingApiName.name}`,
@@ -65,8 +71,16 @@ export default function UploadSchema() {
       let formattedSchema = response.data.schemaJson;
       
       if (typeof formattedSchema === 'string') {
-        formattedSchema = formattedSchema.replace(/\\n/g, '\n');
-        formattedSchema = formattedSchema.replace(/\\t/g, '\t');
+        try {
+          // Try to parse and format the JSON
+          const parsedSchema = JSON.parse(formattedSchema);
+          formattedSchema = JSON.stringify(parsedSchema, null, 2);
+        } catch (e) {
+          // If it's already a string with escaped characters, clean it up
+          formattedSchema = formattedSchema.replace(/\\n/g, '\n');
+          formattedSchema = formattedSchema.replace(/\\t/g, '\t');
+          formattedSchema = formattedSchema.replace(/\\"/g, '"');
+        }
       }
       
       setSchema(formattedSchema);
@@ -101,6 +115,71 @@ export default function UploadSchema() {
       setRequiredFields(requiredFields.filter((f) => f !== fieldName));
     } else {
       setRequiredFields([...requiredFields, fieldName]);
+    }
+  };
+
+  const generateSchemaWithAI = async () => {
+    if (!aiPrompt.trim()) {
+      setMessage({ text: "Please enter a description for the AI to generate a schema", type: "error" });
+      return;
+    }
+
+    setAiLoading(true);
+    setMessage({ text: "", type: "" });
+
+    try {
+      const response = await axios.post(
+        "http://localhost:8080/api/schema/generate",
+        { prompt: aiPrompt }, 
+        { headers: { "Content-Type": "application/json" } }
+      );
+
+      let parsedResponse = response.data;
+      
+      // Handle different response formats from AI
+      if (typeof parsedResponse === 'string') {
+        try {
+          parsedResponse = JSON.parse(parsedResponse);
+        } catch (e) {
+          // If it's a string that can't be parsed, treat it as the schema itself
+          setSchema(parsedResponse);
+          setActiveTab("manual");
+          setMessage({ text: "Schema generated successfully!", type: "success" });
+          setAiLoading(false);
+          return;
+        }
+      }
+      
+      // Handle the case where schema is nested in a "schema" property
+      let generatedSchema = parsedResponse.schema || parsedResponse;
+      
+      // If the schema is still a string, try to parse and format it
+      if (typeof generatedSchema === 'string') {
+        try {
+          const parsedSchema = JSON.parse(generatedSchema);
+          generatedSchema = JSON.stringify(parsedSchema, null, 2);
+        } catch (e) {
+          // If parsing fails, clean up the string format
+          generatedSchema = generatedSchema.replace(/\\n/g, '\n');
+          generatedSchema = generatedSchema.replace(/\\t/g, '\t');
+          generatedSchema = generatedSchema.replace(/\\"/g, '"');
+        }
+      } else {
+        // If it's already an object, stringify with formatting
+        generatedSchema = JSON.stringify(generatedSchema, null, 2);
+      }
+      
+      setSchema(generatedSchema);
+      setActiveTab("manual");
+      setMessage({ text: "Schema generated successfully!", type: "success" });
+
+    } catch (err) {
+      setMessage({
+        text: "Error generating schema: " + (err.response?.data?.message || err.message),
+        type: "error"
+      });
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -145,11 +224,13 @@ export default function UploadSchema() {
       }
 
       setLoading(true);
-      
+      console.log("selected schema",existingApiName);
+      console.log("name",name);
+
       if (isUpdateMode && selectedSchema) {
         // Update existing schema
         const response = await axios.put(
-          `http://localhost:8080/apis/${selectedSchema}`,
+          `http://localhost:8080/apis/${selectedSchema.name}`,
           { name, schemaJson: finalSchema },
           { withCredentials: true }
         );
@@ -180,6 +261,7 @@ export default function UploadSchema() {
       setExampleVisible(false);
       setIsUpdateMode(false);
       setSelectedSchema("");
+      setAiPrompt("");
     } catch (err) {
       setMessage({
         text: "Error: " + (err.response?.data?.message || err.message),
@@ -198,6 +280,7 @@ export default function UploadSchema() {
     setExampleVisible(false);
     setIsUpdateMode(false);
     setSelectedSchema("");
+    setAiPrompt("");
     setMessage({ text: "", type: "" });
   };
 
@@ -382,131 +465,188 @@ export default function UploadSchema() {
                     </p>
                   </div>
 
-                  {formMode ? (
-                    <div>
-                      <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-sm font-medium">Schema Fields</h3>
+                  {/* Schema Input Tabs */}
+                  <div>
+                    <div className="flex border-b border-gray-200 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("manual")}
+                        className={`py-2 px-4 font-medium text-sm ${activeTab === "manual" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
+                      >
+                        Manual Schema Input
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("ai")}
+                        className={`py-2 px-4 font-medium text-sm ${activeTab === "ai" ? "border-b-2 border-blue-500 text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
+                      >
+                        AI Schema Generator
+                      </button>
+                    </div>
+
+                    {activeTab === "ai" ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label htmlFor="aiPrompt" className="block text-sm font-medium text-gray-700 mb-2">
+                            Describe Your API
+                          </label>
+                          <textarea
+                            id="aiPrompt"
+                            rows={4}
+                            className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                            placeholder="Describe the API you want to create. For example: 'Create a login API with username, password, and remember me fields'"
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                          />
+                          <p className="mt-2 text-sm text-gray-500">
+                            Be as specific as possible for better results
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={addField}
-                          className="flex items-center gap-1 text-blue-600 text-sm"
+                          onClick={generateSchemaWithAI}
+                          disabled={aiLoading}
+                          className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200"
                         >
-                          <PlusIcon className="h-4 w-4" /> Add Field
+                          {aiLoading ? (
+                            <>
+                              <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <SparklesIcon className="h-5 w-5" />
+                              Generate Schema with AI
+                            </>
+                          )}
                         </button>
                       </div>
+                    ) : formMode ? (
+                      <div>
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="text-sm font-medium">Schema Fields</h3>
+                          <button
+                            type="button"
+                            onClick={addField}
+                            className="flex items-center gap-1 text-blue-600 text-sm"
+                          >
+                            <PlusIcon className="h-4 w-4" /> Add Field
+                          </button>
+                        </div>
 
-                      {/* Form fields for schema creation */}
-                      {fields.map((field, idx) => (
-                        <div key={idx} className="flex items-center gap-2 mb-2">
-                          <input
-                            placeholder="Field name"
-                            className="px-2 py-1 border rounded w-1/5"
-                            value={field.name}
-                            onChange={(e) => updateField(idx, "name", e.target.value)}
-                          />
-                          <select
-                            value={field.type}
-                            onChange={(e) => updateField(idx, "type", e.target.value)}
-                            className="px-2 py-1 border rounded"
-                          >
-                            <option value="string">string</option>
-                            <option value="number">number</option>
-                            <option value="integer">integer</option>
-                            <option value="boolean">boolean</option>
-                            <option value="array">array</option>
-                            <option value="object">object</option>
-                          </select>
-                          <input
-                            placeholder="Description"
-                            className="px-2 py-1 border rounded flex-1"
-                            value={field.description}
-                            onChange={(e) =>
-                              updateField(idx, "description", e.target.value)
-                            }
-                          />
-                          <label className="flex items-center gap-1 text-sm">
+                        {/* Form fields for schema creation */}
+                        {fields.map((field, idx) => (
+                          <div key={idx} className="flex items-center gap-2 mb-2">
                             <input
-                              type="checkbox"
-                              checked={requiredFields.includes(field.name)}
-                              onChange={() => toggleRequired(field.name)}
+                              placeholder="Field name"
+                              className="px-2 py-1 border rounded w-1/5"
+                              value={field.name}
+                              onChange={(e) => updateField(idx, "name", e.target.value)}
                             />
-                            Required
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => removeField(idx)}
-                            className="text-red-500"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    /* JSON Schema Field */
-                    <div>
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3">
-                        <label htmlFor="jsonSchema" className="text-sm font-medium text-gray-700 mb-2 sm:mb-0">
-                          JSON Schema <span className="text-red-500">*</span>
-                        </label>
-                        <div className="flex space-x-2">
-                          <button
-                            type="button"
-                            onClick={toggleExample}
-                            className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                          >
-                            <LightBulbIcon className="h-4 w-4" />
-                            {exampleVisible ? 'Hide Example' : 'Show Example'}
-                          </button>
-                          {exampleVisible && (
+                            <select
+                              value={field.type}
+                              onChange={(e) => updateField(idx, "type", e.target.value)}
+                              className="px-2 py-1 border rounded"
+                            >
+                              <option value="string">string</option>
+                              <option value="number">number</option>
+                              <option value="integer">integer</option>
+                              <option value="boolean">boolean</option>
+                              <option value="array">array</option>
+                              <option value="object">object</option>
+                            </select>
+                            <input
+                              placeholder="Description"
+                              className="px-2 py-1 border rounded flex-1"
+                              value={field.description}
+                              onChange={(e) =>
+                                updateField(idx, "description", e.target.value)
+                              }
+                            />
+                            <label className="flex items-center gap-1 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={requiredFields.includes(field.name)}
+                                onChange={() => toggleRequired(field.name)}
+                              />
+                              Required
+                            </label>
                             <button
                               type="button"
-                              onClick={copyExample}
-                              className="flex items-center gap-2 px-3 py-2 text-sm text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
+                              onClick={() => removeField(idx)}
+                              className="text-red-500"
                             >
-                              <DocumentDuplicateIcon className="h-4 w-4" />
-                              {copied ? 'Copied!' : 'Copy'}
+                              <TrashIcon className="h-4 w-4" />
                             </button>
-                          )}
-                          {isUpdateMode && (
-                            <button
-                              type="button"
-                              onClick={resetForm}
-                              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-md transition-colors"
-                            >
-                              <XMarkIcon className="h-4 w-4" />
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="relative">
-                        <textarea
-                          id="jsonSchema"
-                          rows={14}
-                          className={`w-full p-4 border font-mono text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 ${
-                            !isValidJson && schema ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                          }`}
-                          placeholder='Paste your JSON Schema here (e.g., { "type": "object", "properties": { ... } })'
-                          value={schema}
-                          onChange={(e) => setSchema(e.target.value)}
-                          required={!formMode}
-                        />
-                        {!isValidJson && schema && (
-                          <div className="absolute top-3 right-3 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs flex items-center gap-1">
-                            <ExclamationTriangleIcon className="h-3 w-3" />
-                            Invalid JSON
                           </div>
-                        )}
+                        ))}
                       </div>
-                      
-                      <div className="mt-3 flex items-center text-sm text-gray-500">
-                        <SparklesIcon className="h-4 w-4 mr-1 text-blue-500" />
-                        Supports all JSON Schema draft versions
+                    ) : (
+                      /* JSON Schema Field */
+                      <div>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3">
+                          <label htmlFor="jsonSchema" className="text-sm font-medium text-gray-700 mb-2 sm:mb-0">
+                            JSON Schema <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex space-x-2">
+                            <button
+                              type="button"
+                              onClick={toggleExample}
+                              className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                            >
+                              <LightBulbIcon className="h-4 w-4" />
+                              {exampleVisible ? 'Hide Example' : 'Show Example'}
+                            </button>
+                            {exampleVisible && (
+                              <button
+                                type="button"
+                                onClick={copyExample}
+                                className="flex items-center gap-2 px-3 py-2 text-sm text-green-600 hover:text-green-800 hover:bg-green-50 rounded-md transition-colors"
+                              >
+                                <DocumentDuplicateIcon className="h-4 w-4" />
+                                {copied ? 'Copied!' : 'Copy'}
+                              </button>
+                            )}
+                            {isUpdateMode && (
+                              <button
+                                type="button"
+                                onClick={resetForm}
+                                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-md transition-colors"
+                              >
+                                <XMarkIcon className="h-4 w-4" />
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="relative">
+                          <textarea
+                            id="jsonSchema"
+                            rows={14}
+                            className={`w-full p-4 border font-mono text-sm rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 ${
+                              !isValidJson && schema ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                            }`}
+                            placeholder='Paste your JSON Schema here (e.g., { "type": "object", "properties": { ... } })'
+                            value={schema}
+                            onChange={(e) => setSchema(e.target.value)}
+                            required={!formMode}
+                          />
+                          {!isValidJson && schema && (
+                            <div className="absolute top-3 right-3 bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs flex items-center gap-1">
+                              <ExclamationTriangleIcon className="h-3 w-3" />
+                              Invalid JSON
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="mt-3 flex items-center text-sm text-gray-500">
+                          <SparklesIcon className="h-4 w-4 mr-1 text-blue-500" />
+                          Supports all JSON Schema draft versions
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Submit Button */}
                   <div className="pt-4">
@@ -640,8 +780,8 @@ export default function UploadSchema() {
                     </svg>
                   </div>
                   <div>
-                    <h4 className="font-medium text-gray-800 mb-1">RESTful Endpoints</h4>
-                    <p className="text-sm text-gray-600">Automatic generation of CRUD endpoints based on your schema</p>
+                    <h4 className="font-medium text-gray-800 mb-1">AI Schema Generation</h4>
+                    <p className="text-sm text-gray-600">Describe your API in natural language and let AI generate the schema</p>
                   </div>
                 </div>
                 
